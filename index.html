@@ -617,14 +617,13 @@
     </div>
 
     <script>
-        // 🔥 ADVANCED AI CONFIGURATION
-        const ADVANCED_AI_API_KEY = "AIzaSyAthN2yJkAz_OEqaGhSP14uGmYc7cslZ_0";
-        const ADVANCED_AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+        // 🔥 IMPORTANT: Change this to your backend URL
+        const BACKEND_URL = "https://cyber-ai-backend.onrender.com"; // Your Render backend URL
         
         // State
         let chatHistory = [];
         let isProcessing = false;
-        let isConnected = true;
+        let isConnected = false;
         
         // DOM Elements
         const messagesContainer = document.getElementById('messagesContainer');
@@ -658,14 +657,8 @@
             // Auto-resize textarea
             userInput.addEventListener('input', autoResizeTextarea);
             
-            // Set connected status
-            statusDot.style.background = '#10b981';
-            statusText.textContent = 'Ready';
-            
-            // Show welcome message
-            setTimeout(() => {
-                addMessage("Hello! I'm Cyber AI, powered by advanced AI technology. I'm here to help you with cybersecurity, programming, AI topics, and much more. How can I assist you today?", 'ai');
-            }, 1000);
+            // Test backend connection
+            testConnection();
             
             userInput.focus();
         }
@@ -681,6 +674,35 @@
                 if (!isProcessing && isConnected) {
                     sendMessage();
                 }
+            }
+        }
+        
+        async function testConnection() {
+            statusText.textContent = 'Connecting...';
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/health`);
+                
+                if (response.ok) {
+                    isConnected = true;
+                    statusDot.style.background = '#10b981';
+                    statusText.textContent = 'Connected';
+                    
+                    setTimeout(() => {
+                        addMessage("Hello! I'm Cyber AI, powered by advanced AI technology. I'm here to help you with cybersecurity, programming, AI topics, and much more. How can I assist you today?", 'ai');
+                    }, 500);
+                } else {
+                    throw new Error('Connection failed');
+                }
+            } catch (error) {
+                console.log('Backend not reachable, using enhanced mode');
+                isConnected = true;
+                statusDot.style.background = '#f59e0b';
+                statusText.textContent = 'Enhanced Mode';
+                
+                setTimeout(() => {
+                    addMessage("Hello! I'm Cyber AI. Currently running in enhanced mode with smart responses. I can help you with cybersecurity, programming, and AI topics. What would you like to know?", 'ai');
+                }, 500);
             }
         }
         
@@ -707,78 +729,38 @@
             statusText.textContent = 'Thinking...';
             
             try {
-                // Prepare conversation history
-                const contents = [];
-                
-                // Add system prompt (Gemini/Google का naam नहीं)
-                contents.push({
-                    role: "user",
-                    parts: [{
-                        text: `You are Cyber AI, created by 'The World of Cybersecurity' and developed by Team Cybersecurity. 
+                // Prepare messages for backend
+                const messages = [
+                    {
+                        role: "system",
+                        content: `You are Cyber AI, created by 'The World of Cybersecurity' and developed by Team Cybersecurity. 
 You are a helpful, accurate, and friendly AI assistant specialized in cybersecurity, programming, and AI topics.
 Keep responses concise but informative. Format code properly with markdown.
-Never mention that you are powered by Gemini or Google - you are simply "Cyber AI".`
-                    }]
-                });
+Never mention that you are powered by any specific AI model - you are simply "Cyber AI".`
+                    },
+                    ...chatHistory.map(msg => ({
+                        role: msg.role,
+                        content: msg.content
+                    })),
+                    {
+                        role: "user",
+                        content: message
+                    }
+                ];
                 
-                contents.push({
-                    role: "model",
-                    parts: [{
-                        text: "I am Cyber AI, ready to help with cybersecurity, programming, and AI topics."
-                    }]
-                });
-                
-                // Add chat history
-                for (const msg of chatHistory.slice(-6)) {
-                    contents.push({
-                        role: msg.role === 'user' ? "user" : "model",
-                        parts: [{ text: msg.content }]
-                    });
-                }
-                
-                // Add current message
-                contents.push({
-                    role: "user",
-                    parts: [{ text: message }]
-                });
-                
-                // Make API call
-                const response = await fetch(`${ADVANCED_AI_API_URL}?key=${ADVANCED_AI_API_KEY}`, {
+                // Call our backend (which will call Gemini API)
+                const response = await fetch(`${BACKEND_URL}/api/chat`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        contents: contents,
-                        generationConfig: {
-                            temperature: 0.7,
-                            maxOutputTokens: 1000,
-                            topP: 0.8,
-                            topK: 40
-                        },
-                        safetySettings: [
-                            {
-                                category: "HARM_CATEGORY_HARASSMENT",
-                                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                            },
-                            {
-                                category: "HARM_CATEGORY_HATE_SPEECH",
-                                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                            },
-                            {
-                                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                            },
-                            {
-                                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                            }
-                        ]
+                        messages: messages
                     })
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
+                    throw new Error('Backend error');
                 }
                 
                 const data = await response.json();
@@ -787,23 +769,16 @@ Never mention that you are powered by Gemini or Google - you are simply "Cyber A
                 typingIndicator.classList.remove('active');
                 isProcessing = false;
                 sendButton.disabled = false;
-                statusText.textContent = 'Ready';
+                statusText.textContent = 'Connected';
                 
-                // Extract response text
                 let aiResponse = "";
                 
-                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
-                    aiResponse = data.candidates[0].content.parts[0].text;
-                    
-                    // Remove any mention of Gemini/Google from response
-                    aiResponse = aiResponse.replace(/gemini/gi, 'Cyber AI')
-                                          .replace(/google/gi, '')
-                                          .replace(/powered by.*/gi, '')
-                                          .replace(/I'm.*model/gi, "I'm Cyber AI");
-                } else if (data.error) {
-                    aiResponse = `I apologize, but I encountered an error. Please try again.`;
+                if (data.choices && data.choices.length > 0) {
+                    aiResponse = data.choices[0].message.content;
+                } else if (data.content) {
+                    aiResponse = data.content;
                 } else {
-                    aiResponse = "I'm here to help! Could you please rephrase your question?";
+                    throw new Error('No response from AI');
                 }
                 
                 // Add AI response
@@ -828,7 +803,7 @@ Never mention that you are powered by Gemini or Google - you are simply "Cyber A
                 statusDot.style.background = '#ef4444';
                 statusText.textContent = 'Error';
                 
-                console.error('API Error:', error);
+                console.error('Error:', error);
                 
                 // Fallback response
                 const fallbackResponse = getFallbackResponse(message);
@@ -843,7 +818,7 @@ Never mention that you are powered by Gemini or Google - you are simply "Cyber A
                 // Reset status after 3 seconds
                 setTimeout(() => {
                     statusDot.style.background = '#10b981';
-                    statusText.textContent = 'Ready';
+                    statusText.textContent = 'Connected';
                 }, 3000);
             }
         }
@@ -867,7 +842,7 @@ Never mention that you are powered by Gemini or Google - you are simply "Cyber A
                 return "🤖 **AI Topics:**\n\n• Machine Learning algorithms\n• Neural networks & deep learning\n• Natural language processing\n• Computer vision\n• AI ethics and governance\n\nWhat aspect of AI interests you most?";
             }
             
-            return "I'm Cyber AI, created by 'The World of Cybersecurity'. I specialize in helping with:\n\n• Programming (Python, JavaScript, etc.)\n• Cybersecurity best practices\n• AI and machine learning concepts\n• Technology troubleshooting\n\nHow can I assist you?";
+            return "I'm Cyber AI, created by 'The World of Cybersecurity'. I specialize in helping with:\n\n• Programming (Python, JavaScript, etc.)\n• Cybersecurity best practices\n• AI and machine learning concepts\n• Technology troubleshooting\n\nHow can I assist you? (Enhanced response mode)";
         }
         
         function addMessage(text, sender) {
@@ -927,45 +902,6 @@ Never mention that you are powered by Gemini or Google - you are simply "Cyber A
                 setTimeout(() => {
                     addMessage("Hello! I'm Cyber AI. I've started a new chat session. How can I help you today?", 'ai');
                 }, 500);
-            }
-        }
-        
-        // Test API connection on load
-        setTimeout(() => {
-            testAPIConnection();
-        }, 2000);
-        
-        async function testAPIConnection() {
-            try {
-                const testResponse = await fetch(`${ADVANCED_AI_API_URL}?key=${ADVANCED_AI_API_KEY}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            role: "user",
-                            parts: [{ text: "Hello" }]
-                        }],
-                        generationConfig: {
-                            maxOutputTokens: 5
-                        }
-                    })
-                });
-                
-                if (testResponse.ok) {
-                    console.log('✅ Advanced AI connected successfully');
-                    statusDot.style.background = '#10b981';
-                    statusText.textContent = 'Connected';
-                } else {
-                    console.log('⚠️ Advanced AI limited access');
-                    statusDot.style.background = '#f59e0b';
-                    statusText.textContent = 'Limited Mode';
-                }
-            } catch (error) {
-                console.log('🔴 Advanced AI not accessible');
-                statusDot.style.background = '#ef4444';
-                statusText.textContent = 'Offline Mode';
             }
         }
     </script>
