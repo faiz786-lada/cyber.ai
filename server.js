@@ -1,4 +1,4 @@
-// server.js - Backend with hidden API key
+// server.js - Updated with proper CORS
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -6,20 +6,39 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔒 SECRET: API key is hidden on server (NOT in frontend)
+// 🔒 SECRET API KEY
 const GEMINI_API_KEY = "AIzaSyAthN2yJkAz_OEqaGhSP14uGmYc7cslZ_0";
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// 🔥 IMPORTANT: CORS Configuration
+const allowedOrigins = [
+    'https://faiz786-lada.github.io',
+    'http://localhost:3000',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500'
+];
 
-// Rate limiting (optional)
-const rateLimit = require('express-rate-limit');
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
-});
-app.use('/api/', limiter);
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) === -1) {
+            // Check if it's a GitHub Pages URL
+            if (origin.includes('.github.io')) {
+                return callback(null, true);
+            }
+            
+            const msg = 'CORS policy blocks this request';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+}));
+
+app.use(express.json());
 
 // Health check
 app.get('/health', (req, res) => {
@@ -31,7 +50,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Root
+// Root - Simple response for testing
 app.get('/', (req, res) => {
     res.json({
         message: 'Cyber AI Backend Server',
@@ -39,42 +58,40 @@ app.get('/', (req, res) => {
             health: 'GET /health',
             chat: 'POST /api/chat'
         },
-        creator: 'The World of Cybersecurity'
+        creator: 'The World of Cybersecurity',
+        note: 'Server is running successfully!'
     });
 });
 
-// Main chat endpoint
+// Chat endpoint
 app.post('/api/chat', async (req, res) => {
     try {
+        console.log('📩 Chat request received');
+        
         const { messages } = req.body;
         
         if (!messages || !Array.isArray(messages)) {
-            return res.status(400).json({ error: 'Messages array is required' });
+            return res.status(400).json({ 
+                error: 'Bad Request',
+                message: 'Messages array is required' 
+            });
         }
 
-        // Extract last user message for system prompt
+        // Get last user message
         const lastMessage = messages[messages.length - 1]?.content || '';
         
         // Prepare request for Gemini API
         const geminiRequest = {
-            contents: [
-                {
-                    role: "user",
-                    parts: [{
-                        text: `You are Cyber AI, created by 'The World of Cybersecurity' and developed by Team Cybersecurity.
-You are a helpful, accurate, and friendly AI assistant specialized in cybersecurity, programming, and AI topics.
-Keep responses concise but informative. Format code properly with markdown.
-Never mention that you are powered by Gemini or Google - you are simply "Cyber AI".
-
-User's question: ${lastMessage}`
-                    }]
-                }
-            ],
+            contents: [{
+                role: "user",
+                parts: [{
+                    text: `You are Cyber AI, created by 'The World of Cybersecurity'. 
+Be helpful and concise. User's question: ${lastMessage}`
+                }]
+            }],
             generationConfig: {
                 temperature: 0.7,
-                maxOutputTokens: 1500,
-                topP: 0.8,
-                topK: 40
+                maxOutputTokens: 1500
             },
             safetySettings: [
                 {
@@ -96,6 +113,8 @@ User's question: ${lastMessage}`
             ]
         };
 
+        console.log('🤖 Calling Gemini API...');
+        
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
             geminiRequest,
@@ -107,24 +126,22 @@ User's question: ${lastMessage}`
             }
         );
 
-        let aiResponse = "";
+        let aiResponse = "Hello! I'm Cyber AI. How can I help you?";
         
         if (response.data.candidates && response.data.candidates[0] && 
             response.data.candidates[0].content && response.data.candidates[0].content.parts) {
             aiResponse = response.data.candidates[0].content.parts[0].text;
             
-            // Clean response from Gemini/Google mentions
+            // Clean response
             aiResponse = aiResponse
                 .replace(/gemini/gi, 'Cyber AI')
                 .replace(/google/gi, '')
-                .replace(/powered by.*/gi, '')
-                .replace(/I'm.*model/gi, "I'm Cyber AI")
-                .replace(/I am.*AI/gi, "I am Cyber AI");
-        } else {
-            aiResponse = "I'm here to help! Could you please rephrase your question?";
+                .replace(/powered by.*/gi, '');
         }
 
-        // Return formatted response
+        console.log('✅ Response generated successfully');
+        
+        // Return response in expected format
         res.json({
             choices: [{
                 message: {
@@ -136,7 +153,7 @@ User's question: ${lastMessage}`
         });
         
     } catch (error) {
-        console.error('Gemini API Error:', error.response?.data || error.message);
+        console.error('❌ Gemini API Error:', error.response?.data || error.message);
         
         // Enhanced fallback response
         const userMessage = req.body.messages?.[req.body.messages.length - 1]?.content || '';
@@ -145,16 +162,12 @@ User's question: ${lastMessage}`
         let fallbackResponse = "Hello! I'm Cyber AI, created by 'The World of Cybersecurity'. ";
         
         if (userMessageLower.includes('python') || userMessageLower.includes('code')) {
-            fallbackResponse += `\n\n🐍 **Python Programming Help:**\n\n\`\`\`python\n# Example: Secure function\ndef secure_hash(input_string):\n    import hashlib\n    return hashlib.sha256(input_string.encode()).hexdigest()\n\nprint(f"Hash: {secure_hash('cybersecurity')}")\n\`\`\``;
+            fallbackResponse += `\n\n🐍 **Python Example:**\n\n\`\`\`python\nprint("Hello from Cyber AI!")\n\`\`\``;
         } else if (userMessageLower.includes('cyber') || userMessageLower.includes('security')) {
-            fallbackResponse += `\n\n🔐 **Cybersecurity Essentials:**\n\n1. Use strong passwords\n2. Enable 2FA\n3. Regular updates\n4. Backup data\n5. Phishing awareness`;
-        } else if (userMessageLower.includes('ai') || userMessageLower.includes('artificial')) {
-            fallbackResponse += `\n\n🤖 **AI Insights:**\n\n• Machine Learning\n• Deep Learning\n• NLP\n• Computer Vision\n• AI Ethics`;
+            fallbackResponse += `\n\n🔐 **Cybersecurity Tip:** Always use strong passwords and enable 2FA.`;
         } else {
-            fallbackResponse += `\n\nI can help you with:\n\n• Programming\n• Cybersecurity\n• AI topics\n• Tech support\n\nAsk me anything specific!`;
+            fallbackResponse += `\n\nI can help with programming, cybersecurity, and AI topics.`;
         }
-        
-        fallbackResponse += "\n\n*(Enhanced response mode)*";
         
         res.json({
             choices: [{
@@ -171,10 +184,10 @@ User's question: ${lastMessage}`
 
 // Error handling
 app.use((err, req, res, next) => {
-    console.error('Server error:', err.stack);
+    console.error('💥 Server error:', err.message);
     res.status(500).json({
         error: 'Internal Server Error',
-        message: 'Something went wrong. Please try again later.'
+        message: 'Please try again later.'
     });
 });
 
@@ -189,6 +202,7 @@ app.use((req, res) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 Cyber AI Backend Server started on port ${PORT}`);
+    console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}`);
     console.log(`🔗 Health: http://localhost:${PORT}/health`);
-    console.log(`✅ API key is secure and hidden from clients`);
+    console.log(`💬 Chat API: http://localhost:${PORT}/api/chat`);
 });
